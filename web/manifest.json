@@ -1,6 +1,6 @@
 {
-    "name": "gallery",
-    "short_name": "gallery",
+    "name": "gallery_app",
+    "short_name": "gallery_app",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

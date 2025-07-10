@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:photo_manager/photo_manager.dart';
+import 'dart:io';
+import 'dart:typed_data';
 import 'utils/permissions.dart';
 
 class GalleryPage extends StatefulWidget {
@@ -24,10 +26,18 @@ class _GalleryPageState extends State<GalleryPage> {
   }
 
   Future<void> loadGallery() async {
-    bool granted = await requestStoragePermission();
-    if (!granted) return;
+    setState(() => loading = true);
 
-    List<AssetPathEntity> albums = await PhotoManager.getAssetPathList(
+    bool granted = await requestStoragePermission();
+    if (!granted) {
+      setState(() => loading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Storage permission is required")),
+      );
+      return;
+    }
+
+    final albums = await PhotoManager.getAssetPathList(
       type: RequestType.image,
       hasAll: true,
     );
@@ -40,15 +50,14 @@ class _GalleryPageState extends State<GalleryPage> {
     };
 
     for (var album in albums) {
-      List<AssetEntity> assets = await album.getAssetListPaged(page: 0, size: 100);
-
+      final assets = await album.getAssetListPaged(page: 0, size: 100);
       for (var asset in assets) {
-        String path = album.name.toLowerCase();
-        if (path.contains('camera')) {
+        final name = album.name.toLowerCase();
+        if (name.contains('camera')) {
           sectionMap['Camera']!.add(asset);
-        } else if (path.contains('whatsapp')) {
+        } else if (name.contains('whatsapp')) {
           sectionMap['WhatsApp']!.add(asset);
-        } else if (path.contains('pinterest')) {
+        } else if (name.contains('pinterest')) {
           sectionMap['Pinterest']!.add(asset);
         } else {
           sectionMap['Others']!.add(asset);
@@ -78,20 +87,47 @@ class _GalleryPageState extends State<GalleryPage> {
             ? Center(child: CircularProgressIndicator())
             : TabBarView(
                 children: albumSections.entries.map((entry) {
+                  final images = entry.value;
+                  if (images.isEmpty) {
+                    return Center(child: Text("No images found in ${entry.key}"));
+                  }
+
                   return GridView.builder(
+                    padding: EdgeInsets.all(4),
                     gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount: 3,
                       mainAxisSpacing: 2,
                       crossAxisSpacing: 2,
                     ),
-                    itemCount: entry.value.length,
+                    itemCount: images.length,
                     itemBuilder: (context, index) {
-                      return FutureBuilder<Widget>(
-                        future: entry.value[index].thumbnailWidget(),
+                      final asset = images[index];
+
+                      return FutureBuilder<Uint8List?>(
+                        future: asset.thumbnailDataWithSize(
+                          ThumbnailSize(200, 200),
+                        ),
                         builder: (context, snapshot) {
                           if (snapshot.connectionState == ConnectionState.done &&
                               snapshot.hasData) {
-                            return snapshot.data!;
+                            return GestureDetector(
+                              onTap: () async {
+                                final file = await asset.file;
+                                if (file != null && mounted) {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) =>
+                                          FullImagePage(imageFile: file),
+                                    ),
+                                  );
+                                }
+                              },
+                              child: Image.memory(
+                                snapshot.data!,
+                                fit: BoxFit.cover,
+                              ),
+                            );
                           } else {
                             return Container(color: Colors.grey[300]);
                           }
@@ -101,7 +137,29 @@ class _GalleryPageState extends State<GalleryPage> {
                   );
                 }).toList(),
               ),
+        floatingActionButton: loading
+            ? null
+            : FloatingActionButton(
+                onPressed: loadGallery,
+                child: Icon(Icons.refresh),
+                tooltip: "Reload Gallery",
+              ),
       ),
+    );
+  }
+}
+
+// Stub for full image viewing (create full_image_page.dart separately)
+class FullImagePage extends StatelessWidget {
+  final File imageFile;
+
+  const FullImagePage({required this.imageFile});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text("Full Image")),
+      body: Center(child: Image.file(imageFile)),
     );
   }
 }
